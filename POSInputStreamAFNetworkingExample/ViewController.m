@@ -30,6 +30,7 @@
 - (IBAction)upload:(id)sender {
     ALAssetsLibrary* library = [[ALAssetsLibrary alloc] init];
 
+    __block ALAsset *firstAsset = nil;
     __block ALAsset *lastAsset = nil;
 
     [library enumerateGroupsWithTypes:ALAssetsGroupSavedPhotos
@@ -38,14 +39,18 @@
                                    [group setAssetsFilter:[ALAssetsFilter allAssets]];
                                    [group enumerateAssetsUsingBlock:^(ALAsset *result, NSUInteger index, BOOL *stopAssets) {
                                        if (result) {
+                                           if (firstAsset == nil) {
+                                               firstAsset = result;
+                                           }
                                            lastAsset = result;
                                        }
                                    }];
                                } else {
                                    if (lastAsset) {
-                                       [self uploadAsset:lastAsset toUrl:@"https://httpbin.org/post" progressBlock:^(long long bytesWriten, long long bytesTotal) {
+                                       [self uploadAsset:firstAsset andAnother:lastAsset toUrl:@"https://httpbin.org/post" progressBlock:^(long long bytesWriten, long long bytesTotal) {
                                            self.statusLabel.text = [NSString stringWithFormat:@"%lld/%lld", bytesWriten, bytesTotal];
                                        } success:^(id responseObject) {
+                                           // NSLog(@"Response: %@", responseObject);
                                            self.statusLabel.text = @"Uploaded";
                                        } failure:^(NSError *error) {
                                            self.statusLabel.text = @"Error";
@@ -57,7 +62,7 @@
                            }];
 }
 
-- (void) uploadAsset:(ALAsset*)asset toUrl:(NSString*)url progressBlock:(void (^)(long long bytesWriten, long long bytesTotal))progressBlock success:(void (^)(id responseObject))success failure:(void (^)(NSError* error))failure
+- (void) formData:(id<AFMultipartFormData>)formData appendAsset:(ALAsset*)asset fieldName:(NSString*)fieldName
 {
     ALAssetRepresentation *assetRepresentation = asset.defaultRepresentation;
     NSString* assetFilename = assetRepresentation.filename;
@@ -65,10 +70,16 @@
     unsigned long long assetSize = assetRepresentation.size;
     NSInputStream *assetInputStream = [NSInputStream pos_inputStreamForAFNetworkingWithAssetURL:assetUrl];
 
+    [formData appendPartWithInputStream:assetInputStream name:fieldName fileName:assetFilename length:assetSize mimeType:@"image/jpeg"];
+}
+
+- (void) uploadAsset:(ALAsset*)asset andAnother:(ALAsset*)anotherAsset toUrl:(NSString*)url progressBlock:(void (^)(long long bytesWriten, long long bytesTotal))progressBlock success:(void (^)(id responseObject))success failure:(void (^)(NSError* error))failure
+{
     AFHTTPRequestOperationManager *manager = [AFHTTPRequestOperationManager manager];
 
     AFHTTPRequestOperation *op = [manager POST:url parameters:nil constructingBodyWithBlock:^(id<AFMultipartFormData>  _Nonnull formData) {
-        [formData appendPartWithInputStream:assetInputStream name:@"file" fileName:assetFilename length:assetSize mimeType:@"image/jpeg"];
+        [self formData:formData appendAsset:asset fieldName:@"file1"];
+        [self formData:formData appendAsset:anotherAsset fieldName:@"file2"];
     } success:^(AFHTTPRequestOperation * _Nonnull operation, id  _Nonnull responseObject) {
         success(responseObject);
     } failure:^(AFHTTPRequestOperation * _Nonnull operation, NSError * _Nonnull error) {
